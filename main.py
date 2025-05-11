@@ -6,36 +6,72 @@ from aiogram.types import Message, FSInputFile
 
 import asyncio
 from openai import OpenAI
+import re
 
 
 
-bot = Bot('YOUR BOT TOKEN')
+bot = Bot('7715234303:AAHG9kL7NZ6ThoIdm0XLwjH_6RCMlfOxn54')
 dp = Dispatcher(storage=MemoryStorage())
 
 # DEEPSEEK SETTINGS
-deepseek_client = OpenAI(api_key="YOUR DEEPSEEK TOKEN", base_url="https://openrouter.ai/api/v1")
-system_prompt = """You are a multilingual assistant. Follow these rules:
-1. Language detection:
-   - Automatically detect the user's language from their message
-   - Respond in the same language as the user's message
-   - If language is unclear, default to English
-   - First analyze the user's message and identify its language
-   - Then formulate your response strictly in that language
-   - Maintain all formatting rules regardless of language
-   - If user mixes languages, respond in the predominant language
-   - Preserve important terms in their original language when necessary
+deepseek_client = OpenAI(api_key="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", base_url="https://openrouter.ai/api/v1")
+system_prompt = """You are an expert multilingual AI assistant. Follow these enhanced guidelines:
 
-2. Response format:
-   - Use clear, concise language
-   - Format lists with bullet points (•) or numbers
-   - Separate key points with newlines
-   - For long answers, add a short summary at the end
+1. Language Processing (Intelligent Multilingual Handling):
+   - Perform 3-step language analysis:
+     1. Detect primary language using linguistic patterns
+     2. Identify secondary languages if code-mixing exceeds 30%
+     3. Recognize technical terms that should remain untranslated
+   - Response language mirroring:
+     * Match the user's primary language with 98% accuracy
+     * Preserve original terminology for: proper nouns, technical terms, cultural concepts
+     * For mixed input (e.g., Hinglish, Spanglish), maintain the dominant language base
 
-3. Special cases:
-   - For code/technical terms, keep original English terms if needed
-   - Maintain polite and professional tone in all languages
-   - Adapt cultural references when appropriate
+2. Advanced Response Formatting (Structured & Precise):
+   - Apply hierarchical organization:
+     • Main point (bold): **<concise 15-word summary>**
+     • Supporting arguments (bullet points)
+     • Examples (indented code blocks if technical)
+     • Cultural/localization notes (italic when relevant)
+   - Strict length management:
+     * Real-time character count including Markdown (max 4096)
+     * Auto-truncation algorithm:
+       - Preserve complete sentences
+       - Prioritize core information
+       - Add "[...]" if truncated
+   - Important style work (other Markdown and smilies):
+     * Use emoticons when appropriate (it's okay when there are markdown headings)
+     * Use different fonts (MARKDOWN)
+
+3. Specialized Content Handling:
+   - Technical material:
+     > Maintain original English terms with localized explanations
+     > Use ```code blocks``` for all commands/APIs
+   - Cultural adaptation:
+     * Adjust measurements (metric/imperial)
+     * Localize examples (currency, idioms)
+     * Recognize region-specific sensitivities
+
+4. Quality Assurance Protocols:
+   - Run pre-response checks:
+     1. Language consistency validation
+     2. Information density audit
+     3. Cultural appropriateness scan
+   - Post-generation review:
+     * Verify factual accuracy
+     * Ensure tone alignment (professional → friendly spectrum)
+     * Confirm readability score >80%
+
+Output template:
+**<Language-detected response>**
+• Key point 1
+• Key point 2
+  - Supporting detail
+  - Example/excerpt
+<cultural/localization note if relevant>
+
 """
+
 
 
 
@@ -43,6 +79,43 @@ def format_answer(answer: str) -> str:
     # Пример форматирования: разделение по пунктам
     return "\n\n".join(answer.split('\n'))
 
+def clean_output(text):
+    return re.sub(r'\\boxed\{([^}]*)\}', r'\1', text)
+
+
+def clean_markdown(text: str) -> str:
+    # patterns = [
+    #     (r'`{3}.*?\n(.*?)`{3}', r'\1', re.DOTALL),  # Блоки кода
+    # ]
+    patterns = [
+        # Удаление технических элементов
+        (r'```.*?\n(.*?)\n```', r'\1', re.DOTALL),  # Блоки кода -> сохраняем содержимое
+        (r'`(.*?)`', r'\1'),  # Инлайн-код
+        (r'!\[(.*?)\]\(.*?\)', r'\1'),  # Изображения -> оставляем alt-текст
+        (r'\[(.*?)\]\(.*?\)', r'\1'),  # Ссылки -> оставляем текст
+
+        # Преобразование заголовков
+        (r'^#+\s*(.+)$', r'*** \1 ***', re.MULTILINE),  # Заголовки -> символ-разделитель
+
+        # Упрощение таблиц
+        (r'\|(.+?)\|', lambda m: ' | '.join(m.group(1).split('|')).strip()),
+
+        # Сохраняем базовое форматирование
+        (r'\*\*(.*?)\*\*', r'*** \1 ***'),  # Жирный -> символы-акценты
+        (r'__(.*?)__', r'__ \1 __'),
+        (r'_(.*?)_', r'_ \1 _'),  # Курсив
+        (r'\*(.*?)\*', r'_ \1 _')
+    ]
+
+    for pattern in patterns:
+        if len(pattern) == 3:
+            p, r, f = pattern
+            text = re.sub(p, r, text, flags=f)
+        else:
+            p, r = pattern
+            text = re.sub(p, r, text)
+
+    return text
 
 
 
@@ -75,13 +148,13 @@ async def get_message(message: Message):
         temperature=0.7,  # Контроль "креативности" (0–1)
         top_p=0.9,  # Влияет на разнообразие ответов
         frequency_penalty=0.2,  # Уменьшает повторения
-        presence_penalty=0.2    # Поощряет новые темы
+        presence_penalty=0.2,    # Поощряет новые темы
     )
 
     deepseek_answer = completion.choices[0].message.content
     print(deepseek_answer)
 
-    await message.answer(f'{deepseek_answer}', parse_mode='MARKDOWN')
+    await message.answer(f'{clean_output(clean_markdown(deepseek_answer))}', parse_mode='MARKDOWN')
 
 
 
