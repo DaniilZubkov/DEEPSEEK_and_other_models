@@ -1,8 +1,8 @@
-
 from aiogram import Bot, Dispatcher
 from aiogram.filters import Command
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import Message, FSInputFile
+from aiogram.enums import ParseMode
 
 import asyncio
 from openai import OpenAI
@@ -10,11 +10,11 @@ import re
 
 
 
-bot = Bot('')
+bot = Bot('YOUR BOT TOKEN')
 dp = Dispatcher(storage=MemoryStorage())
 
 # DEEPSEEK SETTINGS
-deepseek_client = OpenAI(api_key="YOUR API KEY", base_url="https://openrouter.ai/api/v1")
+deepseek_client = OpenAI(api_key="DEEPSEEK API TOKEN", base_url="https://openrouter.ai/api/v1")
 system_prompt = """You are an expert multilingual AI assistant. Follow these enhanced guidelines:
 
 1. Language Processing (Intelligent Multilingual Handling):
@@ -84,27 +84,11 @@ def clean_output(text):
 
 
 def clean_markdown(text: str) -> str:
-    # patterns = [
-    #     (r'`{3}.*?\n(.*?)`{3}', r'\1', re.DOTALL),  # Блоки кода
-    # ]
     patterns = [
-        # Удаление технических элементов
-        (r'```.*?\n(.*?)\n```', r'\1', re.DOTALL),  # Блоки кода -> сохраняем содержимое
-        (r'`(.*?)`', r'\1'),  # Инлайн-код
-        (r'!\[(.*?)\]\(.*?\)', r'\1'),  # Изображения -> оставляем alt-текст
-        (r'\[(.*?)\]\(.*?\)', r'\1'),  # Ссылки -> оставляем текст
-
-        # Преобразование заголовков
-        (r'^#+\s*(.+)$', r'*** \1 ***', re.MULTILINE),  # Заголовки -> символ-разделитель
-
-        # Упрощение таблиц
-        (r'\|(.+?)\|', lambda m: ' | '.join(m.group(1).split('|')).strip()),
-
-        # Сохраняем базовое форматирование
-        (r'\*\*(.*?)\*\*', r'*** \1 ***'),  # Жирный -> символы-акценты
-        (r'__(.*?)__', r'__ \1 __'),
-        (r'_(.*?)_', r'_ \1 _'),  # Курсив
-        (r'\*(.*?)\*', r'_ \1 _')
+        (r'```.*?\n(.*?)\n```', r'\1', re.DOTALL),
+        (r'`(.*?)`', r'\1'),
+        (r'\*\*(.*?)\*\*', r'*\1*'),  # Жирный → корректный Markdown
+        (r'^#+\s*(.+)$', r'*\1*', re.MULTILINE),  # Заголовки → жирный
     ]
 
     for pattern in patterns:
@@ -153,6 +137,7 @@ async def get_message(message: Message):
 
     deepseek_answer = completion.choices[0].message.content
     print(deepseek_answer)
+    print(clean_markdown(deepseek_answer))
 
     await message.answer(f'{clean_output(clean_markdown(deepseek_answer))}', parse_mode='MARKDOWN')
 
