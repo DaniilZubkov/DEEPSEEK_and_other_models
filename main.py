@@ -10,11 +10,11 @@ import re
 
 
 
-bot = Bot('7715234303:AAHG9kL7NZ6ThoIdm0XLwjH_6RCMlfOxn54')
+bot = Bot('')
 dp = Dispatcher(storage=MemoryStorage())
 
 # DEEPSEEK SETTINGS
-deepseek_client = OpenAI(api_key="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", base_url="https://openrouter.ai/api/v1")
+deepseek_client = OpenAI(api_key="YOUR API KEY", base_url="https://openrouter.ai/api/v1")
 system_prompt = """You are an expert multilingual AI assistant. Follow these enhanced guidelines:
 
 1. Language Processing (Intelligent Multilingual Handling):
