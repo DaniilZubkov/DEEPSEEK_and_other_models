@@ -1,20 +1,28 @@
-from aiogram import Bot, Dispatcher
+from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import Message, FSInputFile
 from aiogram.enums import ParseMode
+from keyboards import main_keyboard
 
 import asyncio
 from openai import OpenAI
 import re
+from db import Database
 
 
 
 bot = Bot('')
 dp = Dispatcher(storage=MemoryStorage())
+db = Database('database.db')
 
-# DEEPSEEK SETTINGS (Deepseek-r1-zero:free)
+
+
+# DEEPSEEK SETTINGS (Deepseek-r1 qwen 32b) and other models
 deepseek_client = OpenAI(api_key="", base_url="https://openrouter.ai/api/v1")
+
+
+
 system_prompt = """🤖✨ You are an expert multilingual AI assistant and developer with extensive experience. Follow these advanced guidelines:
 
  🌐 1. Language Processing (Intelligent Multilingual Handling) 🧠
@@ -75,6 +83,72 @@ system_prompt = """🤖✨ You are an expert multilingual AI assistant and devel
 """
 
 
+allowed_models = {
+    # DEEPSEEK family
+    'Deepseek-R1': {
+        'code': 'deepseek-r1',
+        'api-key': 'API KEY',
+    },
+    'Deepseek-V3': {
+        'code': 'deepseek-v3',
+        'api-key': 'API KEY',
+   },
+
+
+   # GPT family
+   'GPT-4 Turbo': {
+        'code': 'gpt4-turbo',
+        'api-key': 'API KEY',
+   },
+   'GPT-4.1': {
+        'code': 'gpt4.1',
+        'api-key': 'API KEY',
+   },
+   'GPT-4o': {
+       'code': 'gpt4-o',
+       'api-key': 'API KEY',
+   },
+
+   # MINI GPT`s family
+   'GPT-4.1 Mini': {
+       'code': 'gpt4.1-mini',
+       'api-key': 'API KEY',
+   },
+   'GPT-4o Mini': {
+       'code': 'gpt4-o-mini',
+       'api-key': 'API KEY',
+   },
+
+   # CLAUDE family
+   'Claude 3.7 Sonnet': {
+       'code': 'claude3.7-sonnet',
+       'api-key': 'API KEY',
+   },
+   'Claude 3.7 Sonnet (thinking)': {
+       'code': 'claude3.7-sonnet-thinking',
+       'api-key': 'API KEY',
+   },
+
+   # Open AI family
+   'OpenAI o3': {
+       'code': 'open-ai-o3',
+       'api-key': 'API KEY',
+   },
+   'Open AI o4 Mini': {
+       'code': 'open-ai-o4-mini',
+       'api-key': 'API KEY',
+   },
+
+
+   # Gemini family
+   'Gemini 2.0 Flash Lite': {
+       'code': 'open-ai-o4-mini',
+       'api-key': 'API KEY',
+   },
+}
+
+
+
 
 
 def format_answer(answer: str) -> str:
@@ -87,8 +161,8 @@ def clean_output(text):
 
 def clean_markdown(text: str) -> str:
     patterns = [
-        # (r'```.*?\n(.*?)\n```', r'\1', re.DOTALL),
-        (r'`(.*?)`', r'\1'),
+        # (r'```.*?\n(.*?)\n```', r'\1', re.DOTALL), можно убрать код (если нужно)
+        # (r'`(.*?)`', r'\1'),
         (r'\*\*(.*?)\*\*', r'*\1*'),  # Жирный → корректный Markdown
         (r'^#+\s*(.+)$', r'*\1*', re.MULTILINE),  # Заголовки → жирный
     ]
@@ -104,13 +178,6 @@ def clean_markdown(text: str) -> str:
     return text
 
 
-# def adaptive_context_window(task_type):
-#     config = {
-#         'code': {'max_length': 4096, 'rope_theta': 1e6},
-#         'text': {'max_length': 2048, 'rope_theta': 1e4},
-#         'math': {'max_length': 1024, 'rope_theta': 1e5}
-#     }
-#     return config[task_type]
 
 
 
@@ -123,60 +190,94 @@ def clean_markdown(text: str) -> str:
 
 @dp.message(Command('start'))
 async def start(message: Message):
-    black_photo_path = 'fotos/black_img.jpg'
+    try:
+        db.create_tables()
+        black_photo_path = 'fotos/black_img.jpg'
 
-    await message.answer_photo(photo=FSInputFile(black_photo_path), caption=f'Привет, {message.from_user.first_name}. Я модель Deepseek в Телеграм.\n\n'
-                               f'')
+        if (not db.user_exists(message.from_user.id)):
+            db.add_user(message.from_user.id)
+            db.set_nickname(message.from_user.id, message.from_user.username)
+            db.set_signup(message.from_user.id, 'done')
+
+        await message.answer_photo(photo=FSInputFile(black_photo_path),
+                                   caption=f'Привет, {message.from_user.first_name}. Я AI ассистент в Telegram. У меня есть модели:\n\n'
+                                           f'***Ты можешь выбрать удобную для себя модель по кнопке.*** 👇',
+                                   parse_mode="MARKDOWN", reply_markup=main_keyboard())
+    except Exception:
+        pass
+
+
 
 
 
 @dp.message()
 async def get_message(message: Message):
-    completion = deepseek_client.chat.completions.create(
-        extra_body={},
-        model="deepseek/deepseek-r1-zero:free",
-        messages=[
-            {
-                "role": "system",
-                "content": system_prompt
-            },
-            {
-                "role": "user",
-                "content": message.text
-            }
-        ],
-        temperature=0.7,  # Контроль "креативности" (0–1)
-        top_p=0.9,  # Влияет на разнообразие ответов
-        frequency_penalty=0.2,  # Уменьшает повторения
-        presence_penalty=0.2,    # Поощряет новые темы
-    )
+    try:
+        await message.answer(f'🛠️ ***Пожалуйста подождите, {db.get_model(message.from_user.id)} обрабатывает ваш запрос...***', parse_mode="MARKDOWN")
 
-    deepseek_answer = completion.choices[0].message.content
+        completion = deepseek_client.chat.completions.create(
+            extra_body={},
+            model="deepseek/deepseek-r1-distill-qwen-32b",
+            messages=[
+                {
+                    "role": "system",
+                    "content": system_prompt
+                },
+                {
+                    "role": "user",
+                    "content": message.text
+                }
+            ],
+            temperature=0.7,  # Контроль "креативности" (0–1)
+            top_p=0.9,  # Влияет на разнообразие ответов
+            frequency_penalty=0.2,  # Уменьшает повторения
+            presence_penalty=0.2,  # Поощряет новые темы
+        )
 
-    print(deepseek_answer)
-    print(clean_markdown(deepseek_answer))
-    print(len(clean_output(clean_markdown(deepseek_answer))))
+        deepseek_answer = completion.choices[0].message.content
 
-    new_deepseek_answer = clean_output(clean_markdown(deepseek_answer))
+        print(deepseek_answer)
+        print(clean_markdown(deepseek_answer))
+        print(len(clean_output(clean_markdown(deepseek_answer))))
 
+        new_deepseek_answer = clean_output(clean_markdown(deepseek_answer))
 
-    if '`' in new_deepseek_answer[0:2] and '`' in new_deepseek_answer[-3:-1]:
+        # if '`' in new_deepseek_answer[0:2] and '`' in new_deepseek_answer[-3:-1]:
+        #     if len([char for char in new_deepseek_answer]) >= 4096:
+        #         while new_deepseek_answer:
+        #             await message.answer(new_deepseek_answer[:4096], parse_mode='MARKDOWN')
+        #             # удаление отправленной части текста
+        #             new_deepseek_answer = new_deepseek_answer[4096:]
+        #     await message.answer(new_deepseek_answer[2:-3], parse_mode='MARKDOWN')
+
         if len([char for char in new_deepseek_answer]) >= 4096:
             while new_deepseek_answer:
                 await message.answer(new_deepseek_answer[:4096], parse_mode='MARKDOWN')
                 # удаление отправленной части текста
                 new_deepseek_answer = new_deepseek_answer[4096:]
-        await message.answer(new_deepseek_answer[2:-3], parse_mode='MARKDOWN')
 
-    if len([char for char in new_deepseek_answer]) >= 4096:
-        while new_deepseek_answer:
-            await message.answer(new_deepseek_answer[:4096], parse_mode='MARKDOWN')
-            # удаление отправленной части текста
-            new_deepseek_answer = new_deepseek_answer[4096:]
-
-    await message.answer(new_deepseek_answer, parse_mode='MARKDOWN')
+        await message.answer(new_deepseek_answer, parse_mode='MARKDOWN')
 
 
+    except Exception:
+        pass
+
+
+
+@dp.callback_query(lambda F: True)
+async def change_model(message: Message, callback_query: types.CallbackQuery):
+    black_photo_path = 'fotos/black_img.jpg'
+
+    try:
+        if callback_query.data == 'change_model':
+            await message.delete()
+            await message.answer_photo(photo=FSInputFile(black_photo_path),
+                                       caption=f'Привет, {message.from_user.first_name}. Я AI ассистент в Telegram. У меня есть модели:\n\n'
+                                               f'***Ты можешь выбрать удобную для себя модель по кнопке.*** 👇',
+                                       parse_mode="MARKDOWN", reply_markup=main_keyboard())
+
+    except Exception:
+        pass
 
 
 

@@ -6,5 +6,7 @@ def main_keyboard():
     builder.add(
         InlineKeyboardButton(text='🧑‍💻 Выбор модели', callback_data='change_model'),
         InlineKeyboardButton(text='🛠️ Канал прогера', url='https://t.me/+1A9f6ZFMJBgxMjRi'),
-        InlineKeyboardButton(text='')
     )
+    return builder.as_markup()
+
+
